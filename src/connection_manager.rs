@@ -118,9 +118,10 @@ impl ConnectionManager {
             let has_matches = browser_iterator.position(|proxy_entry| proxy_entry.mac_address == mac_address);
             match has_matches {
                 None => {}
-                Some(_) => {
+                Some(matching_position) => {
+                    let proxy = browser_proxies.get(matching_position).unwrap();
                     println!("Connection for camera already exist");
-                    return None;
+                    return Some(proxy.clone());
                 }
             }
         }
