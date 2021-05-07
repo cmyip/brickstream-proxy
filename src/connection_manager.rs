@@ -2,7 +2,7 @@ use std::sync::mpsc::{Sender, Receiver, channel};
 use std::net::{TcpStream, TcpListener, SocketAddrV4, Ipv4Addr};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::collections::HashMap;
-use std::io::{Write, Read};
+use std::io::{Write, Read, Error};
 use regex::RegexBuilder;
 use std::clone::Clone;
 use serde::Serialize;
@@ -11,6 +11,8 @@ use std::thread::{Thread, JoinHandle};
 use std::thread;
 use std::ops::Deref;
 use std::borrow::BorrowMut;
+use std::env;
+use crate::config;
 
 pub static mut SENDER: Option<Sender<Action>> = None;
 pub static mut MANAGER: Option<Arc<Mutex<ConnectionManager>>> = None;
@@ -66,18 +68,7 @@ pub struct ConnectionManager {
 const MSG_SIZE: usize = 81960;
 
 unsafe impl Send for ConnectionManager {
-
 }
-
-/*impl Clone for ConnectionManager {
-    fn clone(&self) -> Self {
-        return ConnectionManager {
-            sender: self.sender.clone(),
-            tcp_connections: self.tcp_connections.clone(),
-            receiver: self.receiver.clone()
-        }
-    }
-}*/
 
 impl ConnectionManager {
     pub fn new() -> ConnectionManager {
@@ -85,6 +76,8 @@ impl ConnectionManager {
         let tcp_connections = Arc::new(Mutex::new(vec![]));
         let browser_proxies = Arc::new(Mutex::new(vec![]));
         let packet_counter: Arc<Mutex<HashMap<String, i32>>> = Arc::new(Mutex::new(HashMap::new()));
+        let port_start = config::get_port_start();
+        let port_end = config::get_port_end();
 
         unsafe {
             SENDER = Option::from(sender.clone());
@@ -96,8 +89,8 @@ impl ConnectionManager {
             tcp_connections,
             browser_proxies,
             packet_counter,
-            port_start: 10030,
-            port_end: 10080
+            port_start,
+            port_end
         };
 
         return manager;
@@ -318,6 +311,7 @@ impl ConnectionManager {
                                     let mut stream_recv_count = 0;
                                     let mut packet_limit = 0;
                                     let mut current_packet_size = 0;
+                                    stream.set_read_timeout(Some(core::time::Duration::from_millis(300)));
 
                                     loop {
                                         let mut read_buffer = vec![0; MSG_SIZE];
@@ -331,12 +325,14 @@ impl ConnectionManager {
                                                 // println!("{}", String::from_utf8(Vec::from(&read_buffer[0 .. msg_size])).unwrap());
                                                 browser_stream_borrowed.write(&read_buffer[0..msg_size]);
                                                 current_packet_size += msg_size;
+
                                                 if stream_recv_count < 2 {
                                                     let mut read_size= msg_size;
                                                     for char_index in 0 .. msg_size {
                                                         let m1 = read_buffer[char_index] == 13;
                                                         let m2 = read_buffer[char_index + 1] == 10;
                                                         if (m1 && m2) {
+                                                            // camera sent HTTP Header only
                                                             read_size = char_index;
                                                             println!("Found header!");
                                                             break;
@@ -348,15 +344,32 @@ impl ConnectionManager {
                                                     let read_buffer_str_result = String::from_utf8(read_buffer[0..read_size].to_owned());
                                                     match read_buffer_str_result {
                                                         Ok(read_buffer_str) => {
+                                                            // attempt to read headers
+                                                            if (read_buffer_str == "WWW-Authenticate: Basic realm=\"CAMERA_AUTHENTICATE1\"") {
+                                                                let mut token_buffer = vec![0; MSG_SIZE];
+                                                                let auth_token_result = browser_stream_borrowed.read(&mut token_buffer);
+                                                                match auth_token_result {
+                                                                    Ok(token_size) => {
+                                                                        stream.write(&token_buffer[0 .. token_size]);
+                                                                        browser_stream_borrowed.flush();
+                                                                        break;
+                                                                    }
+                                                                    Err(_) => {}
+                                                                }
+                                                            }
                                                             println!("Parsing packet length {}", read_buffer_str);
+                                                            // just relay data
                                                             let content_length_regex = String::from("Content-length: (?P<CONTENTLENGTH>(?:\\w+))");
                                                             let payload_length_str = extract_post_body(&read_buffer_str, content_length_regex, "".parse().unwrap());
                                                             if payload_length_str.len() > 0 {
-                                                                packet_limit = payload_length_str.parse().expect("parsed length error");
+                                                                let content_length: usize = payload_length_str.parse().expect("parsed length error");
+                                                                let header_length = current_packet_size - msg_size + read_size;
+                                                                packet_limit = content_length + header_length;
                                                                 println!("Parsed packet length {}", packet_limit);
                                                             }
                                                         }
                                                         Err(_) => {
+                                                            // camera sent images, should break
                                                             println!("Cannot convert to UTF8 string");
                                                         }
                                                     }

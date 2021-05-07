@@ -19,11 +19,13 @@ use std::time::Duration;
 use std::net::{SocketAddrV4, Ipv4Addr, IpAddr};
 use std::sync::{Arc, Mutex};
 use web_api::WebApi;
+use dotenv::dotenv;
 
 
 fn main() {
-    // proxy_server::start();
-    let mut camera_listener = CameraListener::new(IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), 2395);
+    dotenv().ok();
+    let port_number = config::get_camera_port();
+    let mut camera_listener = CameraListener::new(IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), port_number);
     let connection_manager = ConnectionManager::new();
 
     let mut web_api = WebApi::new();

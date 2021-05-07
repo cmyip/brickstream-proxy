@@ -1,22 +1,21 @@
 [package]
 name = "brickstream-proxy"
 version = "0.1.0"
-authors = ["ubuntu"]
+authors = ["cmyip"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 rocket = { version = "0.4.7", default-features = false}
-confy = "0.3.1"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4.14"
-chrono = "0.4.0"
-lazy_static = "1.4.0"
+dotenv = "0.15.0"
 regex = "1.4.6"
 rand = "0.8.3"
+rocket_cors = { version = "0.5.1", default-features = false }
 
 [dependencies.rocket_contrib]
 version = "0.4.7"
 default-features = false
-features = ["json", "diesel_postgres_pool"]
+features = ["json"]

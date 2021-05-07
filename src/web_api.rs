@@ -9,6 +9,7 @@ use serde::{Serialize, Deserialize};
 use rocket::response::status;
 use std::net::TcpStream;
 
+
 pub struct WebApi {
 }
 
@@ -59,7 +60,7 @@ fn get_camera_connections() -> JsonValue {
 #[post("/cameras/connection", format = "json", data = "<request>")]
 fn post_cameras_connection(request: Json<ConnectionRequest>) -> Result<JsonValue, status::BadRequest<String>>  {
     let mut response = ConnectionResponse {
-        port_number: 3333
+        port_number: 0
     };
     unsafe {
         match &MANAGER {
@@ -86,9 +87,6 @@ fn post_cameras_connection(request: Json<ConnectionRequest>) -> Result<JsonValue
 
 #[delete("/cameras/connection/<port>")]
 pub fn delete_connection_port(port: u16) -> Result<JsonValue, status::BadRequest<String>> {
-    let mut response = ConnectionResponse {
-        port_number: 3333
-    };
     unsafe {
         match &MANAGER {
             None => {
@@ -109,16 +107,19 @@ impl WebApi {
         WebApi {}
     }
 
+
     pub fn run(&self) {
+        let cors = config::get_cors();
         let rocket = rocket::custom(config::from_env())
+            .attach(cors)
             .mount(
                 "/api",
                 routes![
-                    get_cameras,
-                    get_camera_connections,
-                    post_cameras_connection,
-                    delete_connection_port
-            ],
+                                get_cameras,
+                                get_camera_connections,
+                                post_cameras_connection,
+                                delete_connection_port
+                            ],
             );
         rocket.launch();
     }

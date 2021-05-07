@@ -6,7 +6,7 @@ use std::io::{Read, ErrorKind, Write, Error};
 use std::time::Duration;
 use std::str::{FromStr, Utf8Error};
 use std::cell::UnsafeCell;
-use confy;
+// use confy;
 use crate::bs_proxy_config::BsProxyConfig;
 use regex::{Regex, Captures, RegexBuilder};
 use crate::proxy_server::Action::RegisterCamera;
@@ -44,7 +44,7 @@ enum Action {
 static mut SENDER: Option<Sender<Action>> = None;
 
 pub fn start() {
-    let config: BsProxyConfig = confy::load("config").expect("Failed to read config file");
+    // let config: BsProxyConfig = confy::load("config").expect("Failed to read config file");
     // let proxy_ip = Ipv4Addr::from_str(config.get_proxy_ip()).expect(&*format!("Failed to parse IP {}", config.get_proxy_ip()));
     let proxy_ip = Ipv4Addr::from([0,0,0,0]);
     let address = SocketAddrV4::new(proxy_ip, 2395);
