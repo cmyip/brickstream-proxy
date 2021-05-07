@@ -25,8 +25,10 @@ use dotenv::dotenv;
 fn main() {
     dotenv().ok();
     let port_number = config::get_camera_port();
-    let mut camera_listener = CameraListener::new(IpAddr::from(Ipv4Addr::new(0, 0, 0, 0)), port_number);
+    let camera_ip = config::get_camera_ip();
+    let mut camera_listener = CameraListener::new(IpAddr::from(camera_ip), port_number);
     let connection_manager = ConnectionManager::new();
+    println!("Camera server listening on port {}:{}", camera_ip, port_number);
 
     let mut web_api = WebApi::new();
 

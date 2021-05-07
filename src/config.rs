@@ -3,6 +3,7 @@ use rocket::Config;
 use std::env;
 use rocket_cors::{AllowedHeaders, AllowedOrigins, Error, Cors};
 use rocket::http::Method;
+use std::net::Ipv4Addr;
 
 pub fn get_port_start() -> u16 {
     env::var("BROWSER_PORT_START")
@@ -18,12 +19,14 @@ pub fn get_port_end() -> u16 {
         .expect("BROWSER_PORT_START environment variable should parse to an integer")
 }
 
-pub fn get_camera_ip() -> String {
-    env::var("CAMERA_IP").unwrap_or_else(|_| "0.0.0.0".to_string())
+pub fn get_camera_ip() -> Ipv4Addr {
+    let octets: Vec<u8> = env::var("CAMERA_IP").unwrap_or_else(|_| "0.0.0.0".to_string())
+        .split(".").map(|octet| octet.parse::<u8>().unwrap_or_else(|_| 0)).collect();
+    return Ipv4Addr::from([octets[0], octets[1], octets[2], octets[3]]);
 }
 
 pub fn get_camera_port() -> u16 {
-    env::var("BROWSER_PORT_END")
+    env::var("CAMERA_PORT")
         .unwrap_or_else(|_| "2375".to_string())
         .parse::<u16>()
         .expect("BROWSER_PORT_START environment variable should parse to an integer")
