@@ -1,13 +1,8 @@
 use crate::config;
-use rocket::Rocket;
-use crate::connection_manager::{SENDER, MANAGER, Action, ConnectionManager, BsCamera, ProxySessionDto};
-use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
+use crate::connection_manager::{MANAGER, BsCamera, ProxySessionDto};
 use rocket_contrib::json::{Json, JsonValue};
-use rocket::http::uri::SegmentError::BadStart;
 use serde::{Serialize, Deserialize};
 use rocket::response::status;
-use std::net::TcpStream;
 
 
 pub struct WebApi {

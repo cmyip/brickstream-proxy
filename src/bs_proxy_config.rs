@@ -19,9 +19,3 @@ impl ::std::default::Default for BsProxyConfig {
         }
     }
 }
-
-impl BsProxyConfig {
-    pub fn get_proxy_ip(&self) -> &str {
-        return self.proxy_ip.as_str();
-    }
-}

@@ -1,7 +1,7 @@
 use rocket::config::Environment;
 use rocket::Config;
 use std::env;
-use rocket_cors::{AllowedHeaders, AllowedOrigins, Error, Cors};
+use rocket_cors::{AllowedHeaders, AllowedOrigins};
 use rocket::http::Method;
 use std::net::Ipv4Addr;
 

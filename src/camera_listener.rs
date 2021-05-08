@@ -1,10 +1,10 @@
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{Sender};
 use crate::connection_manager::{Action, BsCamera};
 use std::thread;
 use std::io::{ErrorKind, Read};
 use std::time::Duration;
 use regex::RegexBuilder;
-use std::net::{TcpListener, SocketAddr, Ipv4Addr, IpAddr};
+use std::net::{TcpListener, SocketAddr, IpAddr};
 
 const MSG_SIZE: usize = 81960;
 
@@ -57,7 +57,7 @@ impl CameraListener {
                     }
 
                     //Handle when we do not read an empty socket
-                    Ok(message_size) => {
+                    Ok(_message_size) => {
                         let buf = buff.clone().into_iter().take_while(|&x| x!= 0).collect::<Vec<_>>();
 
                         let string_payload = String::from_utf8(buf).expect("Cannot read camera packet as string");
@@ -98,7 +98,11 @@ impl CameraListener {
                             };
 
                             let tcp_stream = socket.try_clone().expect("Failed to get stream");
-                            sender.send(Action::RegisterCamera(Box::new(bs_camera), Box::new(tcp_stream)));
+                            let result = sender.send(Action::RegisterCamera(Box::new(bs_camera), Box::new(tcp_stream)));
+                            match result {
+                                Ok(_) => {}
+                                Err(_) => {}
+                            }
                             break;
                         }
                     },
@@ -118,7 +122,7 @@ impl CameraListener {
 fn extract_post_body(body: &str, regex_pattern: String, default: String) -> String {
     let re_ip_add = RegexBuilder::new(&*regex_pattern).multi_line(true).build().unwrap();
     let matching_ip_result = re_ip_add.captures(body);
-    let mut matching_text: String = String::from("");
+    let matching_text;
     match matching_ip_result {
         None => {
             matching_text = String::from(default);

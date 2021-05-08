@@ -1,18 +1,16 @@
 use std::sync::mpsc::{Sender, Receiver, channel};
 use std::net::{TcpStream, TcpListener, SocketAddrV4, Ipv4Addr};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use std::io::{Write, Read, Error};
+use std::io::{Write, Read};
 use regex::RegexBuilder;
 use std::clone::Clone;
 use serde::Serialize;
 use rand::prelude::*;
-use std::thread::{Thread, JoinHandle};
+use std::thread::{JoinHandle};
 use std::thread;
-use std::ops::Deref;
-use std::borrow::BorrowMut;
-use std::env;
 use crate::config;
+use std::time::Duration;
 
 pub static mut SENDER: Option<Sender<Action>> = None;
 pub static mut MANAGER: Option<Arc<Mutex<ConnectionManager>>> = None;
@@ -50,15 +48,14 @@ pub struct ProxySessions {
 
 pub enum Action {
     RegisterCamera(Box<BsCamera>, Box<TcpStream>),
-    SendPostRequest(TcpStream, Box<String>, Box<String>),
-    DoNothing(String)
+    SendPostRequest(TcpStream, Box<String>, Box<String>)
 }
 
 #[derive(Clone)]
 pub struct ConnectionManager {
     pub sender: Sender<Action>,
     receiver: Arc<Receiver<Action>>,
-    tcp_connections: Arc<Mutex<Vec<(Box<BsCamera>, Box<TcpStream>)>>>,
+    connected_cameras: Arc<Mutex<Vec<(Box<BsCamera>, Box<TcpStream>)>>>,
     browser_proxies: Arc<Mutex<Vec<ProxySessions>>>,
     packet_counter: Arc<Mutex<HashMap<String, i32>>>,
     port_start: u16,
@@ -73,7 +70,7 @@ unsafe impl Send for ConnectionManager {
 impl ConnectionManager {
     pub fn new() -> ConnectionManager {
         let (sender, receiver) = channel();
-        let tcp_connections = Arc::new(Mutex::new(vec![]));
+        let connected_cameras = Arc::new(Mutex::new(vec![]));
         let browser_proxies = Arc::new(Mutex::new(vec![]));
         let packet_counter: Arc<Mutex<HashMap<String, i32>>> = Arc::new(Mutex::new(HashMap::new()));
         let port_start = config::get_port_start();
@@ -86,7 +83,7 @@ impl ConnectionManager {
         let manager = ConnectionManager {
             sender,
             receiver: Arc::from(receiver),
-            tcp_connections,
+            connected_cameras,
             browser_proxies,
             packet_counter,
             port_start,
@@ -127,31 +124,33 @@ impl ConnectionManager {
         }
 
         // check if mac address exists
-        let tcp_connections = self.tcp_connections.clone();
-        let mut tcp_connections = tcp_connections.lock().unwrap();
-        let existing_position;
+        let cameras_connected;
         {
-            let mut tcp_conn_iterator = tcp_connections.iter();
-            existing_position = tcp_conn_iterator.position( |conn_tuple| conn_tuple.0.mac_address == mac_address);
-        }
-        println!("TCP Connections {}", tcp_connections.len());
-        let tcpstream;
-        match existing_position {
-            None => {
-                return None;
-            }
-            Some(position) => {
-                let camera_info = tcp_connections.get(position);
-                match camera_info {
-                    None => {
-                        return None;
-                    }
-                    Some((info, stream)) => {
-                        tcpstream = stream.try_clone().unwrap();
+            let connected_cameras = self.connected_cameras.clone();
+            let connected_cameras = connected_cameras.lock().unwrap();
+            let mut connected_cameras_iter = connected_cameras.iter();
+            let existing_position = connected_cameras_iter.position( |conn_tuple| conn_tuple.0.mac_address == mac_address);
+            cameras_connected = connected_cameras.len();
+            match existing_position {
+                None => {
+                    return None;
+                }
+                Some(position) => {
+                    let camera_info = connected_cameras.get(position);
+                    match camera_info {
+                        None => {
+                            return None;
+                        }
+                        Some((_info, _stream)) => {
+                        }
                     }
                 }
-            }
-        };
+            };
+
+        }
+
+        println!("Connected Cameras {}", cameras_connected);
+
         // get a random port
         let mut rng = rand::thread_rng();
         let mut numbers: Vec<u16> = (self.port_start .. self.port_end).collect();
@@ -182,7 +181,14 @@ impl ConnectionManager {
                         let request_body = request_body_string.to_string();
 
                         let request_body = Box::new(request_body);
-                        sender.send(Action::SendPostRequest(socket.try_clone().unwrap(), thread_mac_address, request_body));
+                        socket.set_read_timeout(Option::from(Duration::from_millis(2500)));
+                        let result = sender.send(Action::SendPostRequest(socket.try_clone().unwrap(), thread_mac_address, request_body));
+                        match result {
+                            Ok(_send_result) => {
+                                println!("\nSend Result done");
+                            }
+                            Err(_) => {}
+                        }
                     }
                     Err(error_message) => {
                         println!("\nERROR: {}", error_message);
@@ -190,7 +196,7 @@ impl ConnectionManager {
                 }
             }
             if let Ok(msg) = rx.try_recv() {
-                match (msg) {
+                match msg {
                     ProxyAction::ClosePort() => {
                         break;
                     }
@@ -218,7 +224,7 @@ impl ConnectionManager {
                 None => {}
                 Some(position) => {
                     let proxy = browser_proxies.get(position);
-                    match (proxy) {
+                    match proxy {
                         None => {}
                         Some(proxy) => {
                             proxy.tcp_connection.set_nonblocking(true).expect("Unable to close connection");
@@ -232,21 +238,18 @@ impl ConnectionManager {
         }
     }
 
-    pub fn testing(&self) {
-        println!("Testing");
-    }
     pub fn get_cameras_available(&self) -> Vec<BsCamera> {
-        let connections = self.tcp_connections.clone();
-        let mut connections = connections.lock().unwrap();
+        let connections = self.connected_cameras.clone();
+        let connections = connections.lock().unwrap();
         let mut vec_connections: Vec<BsCamera> = vec![];
-        for (camera_info, connection) in connections.iter() {
+        for (camera_info, _connection) in connections.iter() {
             vec_connections.push(*camera_info.clone());
         }
         return vec_connections;
     }
     pub fn process(&self) {
         if let Ok(msg) = self.receiver.try_recv() {
-            let tcp_connections = self.tcp_connections.clone();
+            let tcp_connections = self.connected_cameras.clone();
             match msg {
                 Action::RegisterCamera(camera, socket) => {
                     println!("Incoming camera {}", camera.ip_address);
@@ -268,7 +271,8 @@ impl ConnectionManager {
                     println!("TCP Connections {}", tcp_connections.len());
                 }
                 Action::SendPostRequest(browser_stream, mac_address, post_body) => {
-                    let mut tcp_connections = self.tcp_connections.lock().unwrap();
+                    // check if camera with mac address is available
+                    let tcp_connections = self.connected_cameras.lock().unwrap();
                     let mut tcp_conn_iterator = tcp_connections.iter();
                     let existing_position = tcp_conn_iterator.position( |conn_tuple| conn_tuple.0.mac_address == *mac_address);
                     match existing_position {
@@ -282,11 +286,11 @@ impl ConnectionManager {
                                 Some(connection_tuple) => {
                                     let (info, stream) = connection_tuple;
                                     let packet_counter = self.packet_counter.clone();
-                                    let mut packet_counter = packet_counter.lock().unwrap();
+                                    let packet_counter = packet_counter.lock().unwrap();
                                     let mut connection_counter = packet_counter;
                                     println!("Found matching MAC {}", &info.mac_address);
 
-                                    let mut current_packet_count = 0;
+                                    let current_packet_count;
                                     let current_count_result = connection_counter.get(&info.mac_address);
                                     match current_count_result {
                                         None => {
@@ -299,13 +303,19 @@ impl ConnectionManager {
                                             connection_counter.insert(info.mac_address.clone(), new_value);
                                         }
                                     }
-
+                                    let mut browser_stream_borrowed = browser_stream.try_clone().unwrap();
                                     let mut stream = stream.try_clone().expect("Unable to get handle");
                                     let combined_output = combine_output(&info, &post_body, current_packet_count);
                                     stream.write((&combined_output).as_ref());
-                                    stream.flush();
+                                    let flush_result = stream.flush();
+                                    match flush_result {
+                                        Ok(_) => {}
+                                        Err(_) => {
+                                            browser_stream_borrowed.flush();
+                                        }
+                                    }
                                     let camera_socket_addr = stream.peer_addr().unwrap().to_string();
-                                    let mut browser_stream_borrowed = browser_stream.try_clone().unwrap();
+
                                     println!("Sending to camera {} from {}", camera_socket_addr, browser_stream_borrowed.peer_addr().unwrap());
                                     // println!("{}", combined_output);
 
@@ -332,7 +342,7 @@ impl ConnectionManager {
                                                     for char_index in 0 .. msg_size {
                                                         let m1 = read_buffer[char_index] == 13;
                                                         let m2 = read_buffer[char_index + 1] == 10;
-                                                        if (m1 && m2) {
+                                                        if m1 && m2 {
                                                             // camera sent HTTP Header only
                                                             read_size = char_index;
                                                             println!("Found header!");
@@ -346,7 +356,7 @@ impl ConnectionManager {
                                                     match read_buffer_str_result {
                                                         Ok(read_buffer_str) => {
                                                             // attempt to read headers
-                                                            if (read_buffer_str == "WWW-Authenticate: Basic realm=\"CAMERA_AUTHENTICATE1\"") {
+                                                            if read_buffer_str == "WWW-Authenticate: Basic realm=\"CAMERA_AUTHENTICATE1\"" {
                                                                 let mut token_buffer = vec![0; MSG_SIZE];
                                                                 let auth_token_result = browser_stream_borrowed.read(&mut token_buffer);
                                                                 match auth_token_result {
@@ -394,11 +404,6 @@ impl ConnectionManager {
                         }
                     };
                 }
-                Action::DoNothing(not_string) => {
-                    println!("Got a DoNothing message");
-                    println!("{}", not_string);
-                }
-
             }
         }
     }
@@ -416,7 +421,7 @@ fn combine_output(camera_info: &Box<BsCamera>, http_request: &String, current_pa
 fn extract_post_body(body: &str, regex_pattern: String, default: String) -> String {
     let re_ip_add = RegexBuilder::new(&*regex_pattern).multi_line(true).build().unwrap();
     let matching_ip_result = re_ip_add.captures(body);
-    let mut matching_text: String = String::from("");
+    let matching_text;
     match matching_ip_result {
         None => {
             matching_text = String::from(default);

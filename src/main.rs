@@ -4,7 +4,6 @@ extern crate rocket;
 #[macro_use]
 extern crate rocket_contrib;
 
-mod proxy_server;
 mod bs_proxy_config;
 mod camera_listener;
 mod connection_manager;
@@ -16,7 +15,7 @@ use crate::camera_listener::CameraListener;
 use crate::connection_manager::{ConnectionManager, MANAGER};
 use std::thread;
 use std::time::Duration;
-use std::net::{SocketAddrV4, Ipv4Addr, IpAddr};
+use std::net::{IpAddr};
 use std::sync::{Arc, Mutex};
 use web_api::WebApi;
 use dotenv::dotenv;
@@ -30,9 +29,9 @@ fn main() {
     let connection_manager = ConnectionManager::new();
     println!("Camera server listening on port {}:{}", camera_ip, port_number);
 
-    let mut web_api = WebApi::new();
+    let web_api = WebApi::new();
 
-    let mut sender = connection_manager.sender.clone();
+    let sender = connection_manager.sender.clone();
     camera_listener.set_sender(sender);
 
     unsafe {
