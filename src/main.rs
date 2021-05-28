@@ -26,7 +26,7 @@ fn main() {
     let port_number = config::get_camera_port();
     let camera_ip = config::get_camera_ip();
     let mut camera_listener = CameraListener::new(IpAddr::from(camera_ip), port_number);
-    let connection_manager = ConnectionManager::new();
+    let mut connection_manager = ConnectionManager::new();
     println!("Camera server listening on port {}:{}", camera_ip, port_number);
 
     let web_api = WebApi::new();
@@ -36,7 +36,7 @@ fn main() {
 
     unsafe {
         let connection_manager = connection_manager.clone();
-        MANAGER = Option::from(Arc::from(Mutex::from(connection_manager)));
+        MANAGER = Option::from(Arc::from(connection_manager));
     }
 
     thread::spawn( move || loop {

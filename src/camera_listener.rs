@@ -97,8 +97,9 @@ impl CameraListener {
                                 packet_count: 0
                             };
 
-                            let tcp_stream = socket.try_clone().expect("Failed to get stream");
-                            let result = sender.send(Action::RegisterCamera(Box::new(bs_camera), Box::new(tcp_stream)));
+                            // let tcp_stream = socket.try_clone().expect("Failed to get stream");
+                            // let result = sender.send(Action::RegisterCamera(Box::new(bs_camera), Box::new(socket)));
+                            let result = sender.send(Action::RegisterCamera(Box::new(bs_camera), socket));
                             match result {
                                 Ok(_) => {}
                                 Err(_) => {}
@@ -109,6 +110,7 @@ impl CameraListener {
                     //Handle reading errors!
                     Err(ref err) if err.kind() == ErrorKind::WouldBlock => (),
                     Err(_) => {
+                        sender.send(Action::UnregisterCamera(socket));
                         println!("\nClient: {} left the channel.", addr);
                         break;
                     }

@@ -39,7 +39,7 @@ pub fn get_cors() -> rocket_cors::Cors {
 
     let cors_result = rocket_cors::CorsOptions {
         allowed_origins,
-        allowed_methods: vec![Method::Get, Method::Options, Method::Post, Method::Delete, Method::Put].into_iter().map(From::from).collect(),
+        allowed_methods: vec![Method::Get, Method::Post, Method::Delete, Method::Put].into_iter().map(From::from).collect(),
         allowed_headers: AllowedHeaders::some(&["Authorization", "Accept", "Content-Type"]),
         allow_credentials: true,
         fairing_route_base: "/api".parse().unwrap(),

@@ -1,6 +1,6 @@
 use std::sync::mpsc::{Sender, Receiver, channel};
 use std::net::{TcpStream, TcpListener, SocketAddrV4, Ipv4Addr};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::collections::HashMap;
 use std::io::{Write, Read};
 use regex::RegexBuilder;
@@ -11,9 +11,11 @@ use std::thread::{JoinHandle};
 use std::thread;
 use crate::config;
 use std::time::Duration;
+use std::borrow::BorrowMut;
+use std::ops::DerefMut;
 
 pub static mut SENDER: Option<Sender<Action>> = None;
-pub static mut MANAGER: Option<Arc<Mutex<ConnectionManager>>> = None;
+pub static mut MANAGER: Option<Arc<ConnectionManager>> = None;
 
 #[derive(Clone, Serialize)]
 pub struct BsCamera {
@@ -47,19 +49,21 @@ pub struct ProxySessions {
 }
 
 pub enum Action {
-    RegisterCamera(Box<BsCamera>, Box<TcpStream>),
-    SendPostRequest(TcpStream, Box<String>, Box<String>)
+    RegisterCamera(Box<BsCamera>, TcpStream),
+    SendPostRequest(TcpStream, Box<String>, Box<String>),
+    UnregisterCamera(TcpStream)
 }
 
 #[derive(Clone)]
 pub struct ConnectionManager {
     pub sender: Sender<Action>,
     receiver: Arc<Receiver<Action>>,
-    connected_cameras: Arc<Mutex<Vec<(Box<BsCamera>, Box<TcpStream>)>>>,
+    connected_cameras: Arc<Mutex<Vec<(Box<BsCamera>, TcpStream)>>>,
     browser_proxies: Arc<Mutex<Vec<ProxySessions>>>,
     packet_counter: Arc<Mutex<HashMap<String, i32>>>,
     port_start: u16,
-    port_end: u16
+    port_end: u16,
+    camera_list: Arc<RwLock<Vec<Box<BsCamera>>>>
 }
 
 const MSG_SIZE: usize = 81960;
@@ -75,6 +79,7 @@ impl ConnectionManager {
         let packet_counter: Arc<Mutex<HashMap<String, i32>>> = Arc::new(Mutex::new(HashMap::new()));
         let port_start = config::get_port_start();
         let port_end = config::get_port_end();
+        let camera_list = Arc::new(RwLock::new(vec![]));
 
         unsafe {
             SENDER = Option::from(sender.clone());
@@ -87,12 +92,13 @@ impl ConnectionManager {
             browser_proxies,
             packet_counter,
             port_start,
-            port_end
+            port_end,
+            camera_list
         };
 
         return manager;
     }
-    pub fn get_connections(&self) -> Vec<ProxySessionDto> {
+    /*pub fn get_connections(&self) -> Vec<ProxySessionDto> {
         let mut proxy_dtos : Vec<ProxySessionDto> = vec![];
         let proxy_sessions = self.browser_proxies.clone();
         let proxy_sessions = proxy_sessions.lock().unwrap();
@@ -104,7 +110,7 @@ impl ConnectionManager {
             })
         }
         return proxy_dtos;
-    }
+    }*/
 
     pub fn get_stream_by_mac_id(&self, mac_address: String) -> Option<ProxySessions> {
         // check if mac address already opened
@@ -239,15 +245,21 @@ impl ConnectionManager {
     }
 
     pub fn get_cameras_available(&self) -> Vec<BsCamera> {
-        let connections = self.connected_cameras.clone();
+        /*let connections = self.connected_cameras.clone();
         let connections = connections.lock().unwrap();
         let mut vec_connections: Vec<BsCamera> = vec![];
         for (camera_info, _connection) in connections.iter() {
             vec_connections.push(*camera_info.clone());
         }
-        return vec_connections;
+        return vec_connections;*/
+        let copy_of_camera_list;
+        {
+            let borrowed_handle = self.camera_list.read().unwrap();
+            copy_of_camera_list = borrowed_handle.iter().map(|cam| *cam.clone()).collect();
+        }
+        return copy_of_camera_list;
     }
-    pub fn process(&self) {
+    pub fn process(&mut self) {
         if let Ok(msg) = self.receiver.try_recv() {
             let tcp_connections = self.connected_cameras.clone();
             match msg {
@@ -261,14 +273,27 @@ impl ConnectionManager {
                     }
                     match existing_position {
                         None => {
-                            tcp_connections.push((camera, socket));
+                            tcp_connections.push((camera.clone(), socket));
                         }
                         Some(position) => {
                             tcp_connections.remove(position);
-                            tcp_connections.push((camera, socket));
+                            tcp_connections.push((camera.clone(), socket));
                         }
                     };
+                    let new_list: Vec<Box<BsCamera>> = tcp_connections.iter()
+                        .map( |conn_tuple| conn_tuple.0.clone() )
+                        .collect();
+                    {
+                        let mut camera_list_mutex = self.camera_list.clone();
+                        let mut camera_list = camera_list_mutex.write().unwrap();
+                        camera_list.clear();
+                        for item in new_list {
+                            camera_list.push(item);
+                        }
+                    }
+
                     println!("TCP Connections {}", tcp_connections.len());
+                    println!("Camera List {}", self.camera_list.read().unwrap().len());
                 }
                 Action::SendPostRequest(browser_stream, mac_address, post_body) => {
                     // check if camera with mac address is available
@@ -322,7 +347,8 @@ impl ConnectionManager {
                                     let mut stream_recv_count = 0;
                                     let mut packet_limit = 0;
                                     let mut current_packet_size = 0;
-                                    stream.set_read_timeout(Some(core::time::Duration::from_millis(300)));
+                                    stream.set_read_timeout(Some(core::time::Duration::from_millis(3000)));
+                                    stream.set_write_timeout(Some(core::time::Duration::from_millis(3000)));
 
                                     loop {
                                         let mut read_buffer = vec![0; MSG_SIZE];
@@ -403,6 +429,34 @@ impl ConnectionManager {
 
                         }
                     };
+                }
+                Action::UnregisterCamera(socket) => {
+                    let mut tcp_connections = tcp_connections.lock().unwrap();
+                    let existing_position;
+                    {
+                        let mut tcp_conn_iterator = tcp_connections.iter();
+                        existing_position = tcp_conn_iterator.position( |conn_tuple| conn_tuple.1.peer_addr().unwrap().port() == socket.peer_addr().unwrap().port());
+                    }
+                    match existing_position {
+                        None => {
+                            println!("No Matching stream {}", socket.peer_addr().unwrap().ip());
+                        }
+                        Some(position) => {
+                            println!("Removing from list {}", socket.peer_addr().unwrap().ip());
+                            tcp_connections.remove(position);
+                        }
+                    };
+                    let new_list : Vec<Box<BsCamera>> = tcp_connections.iter()
+                        .map( |conn_tuple| conn_tuple.0.clone() )
+                        .collect();
+                    {
+                        let mut camera_list = self.camera_list.clone();
+                        let mut camera_list = camera_list.write().unwrap();
+                        camera_list.clear();
+                        for item in new_list {
+                            camera_list.push(item);
+                        }
+                    }
                 }
             }
         }

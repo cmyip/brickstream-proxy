@@ -1,8 +1,9 @@
 use crate::config;
-use crate::connection_manager::{MANAGER, BsCamera, ProxySessionDto};
+use crate::connection_manager::{MANAGER, BsCamera, ProxySessionDto, ConnectionManager};
 use rocket_contrib::json::{Json, JsonValue};
 use serde::{Serialize, Deserialize};
 use rocket::response::status;
+use std::sync::{PoisonError, MutexGuard};
 
 
 pub struct WebApi {
@@ -25,9 +26,22 @@ fn get_cameras() -> JsonValue {
             None => {}
             Some(manager) => {
                 let manager = manager.clone();
-                let manager = manager.lock().unwrap();
                 let connections = manager.get_cameras_available();
+                println!("Found {} connections", connections.len());
                 return json!(connections);
+                /*let manager_lock = manager.lock();
+                match manager_lock {
+                    Ok(manager) => {
+                        let connections = manager.get_cameras_available();
+                        println!("Found {} connections", connections.len());
+                        return json!(connections);
+                    }
+                    Err(_) => {
+                        println!("Failed to perform manager_lock");
+                        return json!([]);
+                    }
+                }*/
+
             }
         }
     }
@@ -35,7 +49,7 @@ fn get_cameras() -> JsonValue {
     return json!(empty_array);
 }
 
-#[get("/cameras/connection")]
+/*#[get("/cameras/connection")]
 fn get_camera_connections() -> JsonValue {
     unsafe {
         match &MANAGER {
@@ -50,7 +64,7 @@ fn get_camera_connections() -> JsonValue {
     }
     let empty_array : Vec<ProxySessionDto> = vec![];
     return json!(empty_array);
-}
+}*/
 
 #[post("/cameras/connection", format = "json", data = "<request>")]
 fn post_cameras_connection(request: Json<ConnectionRequest>) -> Result<JsonValue, status::BadRequest<String>>  {
@@ -63,8 +77,9 @@ fn post_cameras_connection(request: Json<ConnectionRequest>) -> Result<JsonValue
                 return Result::Err(status::BadRequest(Some("Manager is not here".parse().unwrap())));
             }
             Some(manager) => {
+                /*let manager = manager.clone();
+                let manager = manager.lock().unwrap();*/
                 let manager = manager.clone();
-                let manager = manager.lock().unwrap();
                 let stream = manager.get_stream_by_mac_id((*request.mac_address).to_string());
                 match stream {
                     None => {
@@ -89,7 +104,7 @@ pub fn delete_connection_port(port: u16) -> Result<JsonValue, status::BadRequest
             }
             Some(manager) => {
                 let manager = manager.clone();
-                let manager = manager.lock().unwrap();
+                // let manager = manager.lock().unwrap();
                 manager.close_stream_by_port_num(port);
                 return Result::Ok(json!(()));
             }
@@ -111,7 +126,7 @@ impl WebApi {
                 "/api",
                 routes![
                                 get_cameras,
-                                get_camera_connections,
+                                /*get_camera_connections,*/
                                 post_cameras_connection,
                                 delete_connection_port
                             ],
