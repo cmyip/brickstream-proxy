@@ -1,8 +1,8 @@
 use std::sync::mpsc::{Sender, Receiver, channel};
-use std::net::{TcpStream, TcpListener, SocketAddrV4, Ipv4Addr};
+use std::net::{TcpStream, TcpListener, SocketAddrV4, Ipv4Addr, Shutdown};
 use std::sync::{Arc, Mutex, RwLock};
 use std::collections::HashMap;
-use std::io::{Write, Read};
+use std::io::{Write, Read, Error};
 use regex::RegexBuilder;
 use std::clone::Clone;
 use serde::Serialize;
@@ -446,6 +446,15 @@ impl ConnectionManager {
                             tcp_connections.remove(position);
                         }
                     };
+                    let shutdown_result = socket.shutdown(Shutdown::Both);
+                    match shutdown_result {
+                        Ok(_) => {
+                            println!("Shutdown socket successful");
+                        }
+                        Err(_) => {
+                            println!("Failed shutdown socket");
+                        }
+                    }
                     let new_list : Vec<Box<BsCamera>> = tcp_connections.iter()
                         .map( |conn_tuple| conn_tuple.0.clone() )
                         .collect();

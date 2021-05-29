@@ -53,6 +53,7 @@ impl CameraListener {
                     //But this may only apply when the other end closed the connection cleanly.
                     Ok(0) => {
                         println!("\nCamera {} disconnected", addr);
+                        sender.send(Action::UnregisterCamera(socket));
                         break;
                     }
 
@@ -108,7 +109,6 @@ impl CameraListener {
                         }
                     },
                     //Handle reading errors!
-                    Err(ref err) if err.kind() == ErrorKind::WouldBlock => (),
                     Err(_) => {
                         sender.send(Action::UnregisterCamera(socket));
                         println!("\nClient: {} left the channel.", addr);
