@@ -12,7 +12,7 @@ use std::thread;
 use crate::config;
 use std::time::Duration;
 use std::borrow::BorrowMut;
-use std::ops::DerefMut;
+use std::ops::{DerefMut, Deref};
 
 pub static mut SENDER: Option<Sender<Action>> = None;
 pub static mut MANAGER: Option<Arc<ConnectionManager>> = None;
@@ -276,6 +276,16 @@ impl ConnectionManager {
                             tcp_connections.push((camera.clone(), socket));
                         }
                         Some(position) => {
+                            let mut existing_iter = tcp_connections.get(position).unwrap();
+                            let shutdown_result = existing_iter.1.shutdown(Shutdown::Both);
+                            match shutdown_result {
+                                Ok(_) => {
+                                    println!("Closing old connection to {}", camera.ip_address);
+                                }
+                                Err(_) => {
+                                    println!("Unable to close connection to {}", camera.ip_address);
+                                }
+                            }
                             tcp_connections.remove(position);
                             tcp_connections.push((camera.clone(), socket));
                         }
