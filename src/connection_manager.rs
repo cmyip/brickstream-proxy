@@ -166,7 +166,17 @@ impl ConnectionManager {
         // create a new server
         let proxy_ip = Ipv4Addr::from([0,0,0,0]);
         let browser_address = SocketAddrV4::new(proxy_ip, *random_port_number);
-        let browser_listener = TcpListener::bind(browser_address).unwrap();
+        let browser_listener_result = TcpListener::bind(browser_address);
+        let browser_listener;
+        match browser_listener_result {
+            Ok(listener_instance) => {
+                browser_listener = listener_instance;
+            }
+            Err(_) => {
+                println!("Unable to bind to port {}, please try again", random_port_number);
+                return None;
+            }
+        }
         let sender = self.sender.clone();
 
         let thread_mac_address = Box::new(mac_address.clone());
